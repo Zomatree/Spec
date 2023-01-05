@@ -3,7 +3,7 @@ from types import NoneType, UnionType
 
 from typing import Annotated, Any, Literal, Union, get_args
 
-from .errors import MissingArgument, MissingRequiredKey, InvalidType
+from .errors import MissingArgument, MissingRequiredKey, InvalidType, FailedValidation
 from .item import Item, InternalItem
 from .util import get_origin, pretty_type, generate_type_from_data
 
@@ -48,7 +48,10 @@ def validate(item: InternalItem, model: Model, value: Any, root_item: InternalIt
 
         value = dict_output
 
-    return value
+    if not item.validate(value):
+        raise FailedValidation(f"{model.__class__.__name__}.{item.key} failed validation")
+
+    return item.hook(value)
 
 def convert_to_item(cls: type, key: str, annotation: Any, existing: Item | None = None) -> Item:
     origin = get_origin(annotation)

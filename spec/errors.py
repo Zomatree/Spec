@@ -11,3 +11,6 @@ class MissingRequiredKey(SpecError):
 
 class InvalidType(SpecError):
     pass
+
+class FailedValidation(SpecError):
+    pass
