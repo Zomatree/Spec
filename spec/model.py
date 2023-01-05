@@ -1,21 +1,29 @@
 from __future__ import annotations
 from types import NoneType, UnionType
 
-from typing import Annotated, Any, Union, get_args
+from typing import Annotated, Any, Literal, Union, get_args
 
 from .errors import MissingArgument, MissingRequiredKey, InvalidType
 from .item import Item, InternalItem
-from .util import get_origin
+from .util import get_origin, pretty_type, generate_type_from_data
 
+class _Missing:
+    def __bool__(self) -> Literal[False]:
+        return False
 
-def validate(item: InternalItem, model: Model, value: Any) -> Any:
+Missing = _Missing()
+
+def validate(item: InternalItem, model: Model, value: Any, root_item: InternalItem | None = None, root_value: Any | _Missing = Missing) -> Any:
+    root_item = root_item or item
+    root_value = root_value or value
+
     if isinstance(item.ty, type) and issubclass(item.ty, Model):
         return item.ty(value)
 
     origin = get_origin(item.ty)
 
     if not isinstance(value, origin):
-        raise InvalidType(f"{model.__class__.__name__}.{item.key} expected type {item.ty} but found {type(value).__name__}")
+        raise InvalidType(f"{model.__class__.__name__}.{item.key} expected type {pretty_type(root_item)} but found {generate_type_from_data(root_value)}")
 
     if origin in [list, set, tuple]:
         internal_item = item.internal_items[0]
@@ -23,7 +31,7 @@ def validate(item: InternalItem, model: Model, value: Any) -> Any:
         list_output: list[InternalItem] = []
 
         for internal_value in value:
-            list_output.append(validate(internal_item, model, internal_value))
+            list_output.append(validate(internal_item, model, internal_value, root_item, root_value))
 
         value = origin(list_output)
 
@@ -33,8 +41,8 @@ def validate(item: InternalItem, model: Model, value: Any) -> Any:
         dict_output: dict[Any, Any] = {}
 
         for internal_key, internal_value in value.items():
-            internal_key = validate(internal_item_key, model, internal_key)
-            internal_value = validate(internal_item_value, model, internal_value)
+            internal_key = validate(internal_item_key, model, internal_key, root_item, root_value)
+            internal_value = validate(internal_item_value, model, internal_value, root_item, root_value)
 
             dict_output[internal_key] = internal_value
 
@@ -95,7 +103,7 @@ class Model:
                 if item.default:
                     setattr(self, item.key, item.default())
                 else:
-                    raise MissingRequiredKey(f"Missing required key {key}")
+                    raise MissingRequiredKey(f"Missing required key {self.__class__.__name__}.{key}")
 
         for key, value in data.items():
             if not (item := self._items.get(key)):
