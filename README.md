@@ -15,7 +15,7 @@ A statically typed data structure validator with support for advance features.
 ## Installation
 
 ```console
-pip install git+https://github.com/zomatree/spec
+$ pip install git+https://github.com/zomatree/spec
 ```
 
 # Usage
