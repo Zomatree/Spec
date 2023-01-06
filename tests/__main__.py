@@ -232,6 +232,17 @@ class AnnotatedOptionalWithDefaultUsage(unittest.TestCase):
     def test_repr(self):
         self.assertEqual(repr(self.instance), "<AnnotatedOptionalWithDefault value=0>")
 
+class DefaultClsAttr(spec.Model):
+    value: int = 1
+
+class DefaultClsAttrUsage(unittest.TestCase):
+    INPUT = {}
+
+    def setUp(self) -> None:
+        self.instance = DefaultClsAttr(self.INPUT)
+
+    def test_value_value(self):
+        self.assertEqual(self.instance.value, DefaultClsAttr.value)
 
 if __name__ == "__main__":
     unittest.main()

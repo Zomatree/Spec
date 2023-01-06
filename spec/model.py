@@ -1,6 +1,5 @@
 from __future__ import annotations
 from types import NoneType, UnionType
-
 from typing import Annotated, Any, Literal, Union, get_args
 
 from .errors import MissingArgument, MissingRequiredKey, InvalidType, FailedValidation
@@ -91,6 +90,10 @@ class Model:
 
         for key, annotation in cls.__annotations__.items():
             item = convert_to_item(cls, key, annotation)._to_internal()
+
+            if (default := getattr(cls, key, Missing)) is not Missing:
+                item.default = lambda: default
+
             items[item.actual_key] = item
 
         cls._items = items
