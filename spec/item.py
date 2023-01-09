@@ -28,6 +28,7 @@ class Item(Generic[T]):
         assert self._ty is not None
 
         return InternalItem(self._key, self._rename, self._ty, self._internal_items or [], self._default, self._validate, self._hook, self._tag, self._tag_info, self._type_name)
+
     def rename(self, key: str) -> Self:
         self._rename = key
         self._modified.append("_rename")

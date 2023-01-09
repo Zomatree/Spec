@@ -1,8 +1,7 @@
 from __future__ import annotations
-from bdb import Breakpoint
-from pyexpat import model
-from types import NoneType, UnionType
-from typing import Annotated, Any, Generic, TypeGuard, TypeVar, Union, get_args
+
+from typing import Annotated, Any, Generic, TypeGuard, TypeVar, get_args
+from types import NoneType, new_class
 
 from .errors import MissingArgument, MissingRequiredKey, InvalidType, FailedValidation, MissingTypeName, SpecError, UnknownUnionKey
 from .item import Item, InternalItem
@@ -143,12 +142,15 @@ def convert_to_item(cls: type, key: str, annotation: Any, existing: Item | None 
     args = get_args(annotation)
 
     if origin is Annotated:
-        existing_item = args[1]
-        existing_item._key = key
-
-        item = convert_to_item(cls, key, args[0], existing_item)
+        item = convert_to_item(cls, key, args[0], args[1])
     else:
-        item = existing or Item(_key=key, _ty=annotation)
+        if existing:
+            existing._key = key
+            existing._ty = annotation
+
+            item = existing
+        else:
+            item = Item(_key=key, _ty=annotation)
 
     if is_union(origin):
         if any(x is NoneType for x in args) and "_default" not in item._modified:  # for handling Optional
@@ -181,7 +183,6 @@ def convert_to_item(cls: type, key: str, annotation: Any, existing: Item | None 
 
     item._internal_items = internal_items
 
-    print(item)
     return item
 
 class Model:
@@ -286,10 +287,10 @@ class Model:
         return f"<{self.__class__.__name__} {' '.join(items)}>"
 
 class TransparentModel(Generic[T], Model):
-    def __init_subclass__(cls) -> None:
+    def __init_subclass__(cls, *, item: Item | None = None) -> None:
         ty = get_args(get_original_bases(cls)[0])[0]
 
-        cls._items = {"value": convert_to_item(cls, "value", ty)._to_internal()}
+        cls._items = {"value": convert_to_item(cls, "value", ty, item)._to_internal()}
 
     def __init__(self, data: Any):
         self.value: T
@@ -299,10 +300,15 @@ class TransparentModel(Generic[T], Model):
     def __repr__(self) -> str:
         return f"<{self.__class__.__name__} {self.value!r}>"
 
-def transparent(ty: type[T]) -> type[TransparentModel[T]]:
+def transparent(ty: type[T], item: Item | None = None) -> type[TransparentModel[T]]:
     if is_union(ty):
         name = "Or".join([v.__name__.capitalize() for v in get_args(ty)])
     else:
         name = ty.__name__
 
-    return type(name, (TransparentModel[ty],), {})
+    class Mod(TransparentModel[ty], item=item):
+        pass
+
+    Mod.__name__ = name
+
+    return Mod

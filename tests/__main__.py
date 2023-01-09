@@ -1,4 +1,4 @@
-from typing import Annotated, Optional, Self
+from typing import Annotated, Optional
 import unittest
 import spec
 
@@ -299,14 +299,14 @@ class ExternallyTaggedUnionUsage(unittest.TestCase):
 
         assert isinstance(self.instance_1.value, PartA)
 
-        self.assertEqual(self.instance_1.value.a, self.INPUT_1["a"])
+        self.assertEqual(self.instance_1.value.a, self.INPUT_1["PartA"]["a"])
 
     def test_instance_b(self):
         self.assertIsInstance(self.instance_2.value, PartB)
 
         assert isinstance(self.instance_2.value, PartB)
 
-        self.assertEqual(self.instance_2.value.b, self.INPUT_2["b"])
+        self.assertEqual(self.instance_2.value.b, self.INPUT_2["PartB"]["b"])
 
 if __name__ == "__main__":
     unittest.main()
