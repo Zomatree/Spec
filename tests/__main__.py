@@ -1,4 +1,4 @@
-from typing import Annotated, Optional
+from typing import Annotated, Optional, Self
 import unittest
 import spec
 
@@ -243,6 +243,70 @@ class DefaultClsAttrUsage(unittest.TestCase):
 
     def test_value_value(self):
         self.assertEqual(self.instance.value, DefaultClsAttr.value)
+
+class Invalid(spec.Model):
+    a: int
+
+class InvalidUsage(unittest.TestCase):
+    def test_fail(self):
+        with self.assertRaises(spec.InvalidType):
+            Invalid({"a": "not a string"})
+
+class PartA(spec.Model):
+    a: int
+
+class PartB(spec.Model):
+    b: str
+
+class UntaggedPart(spec.TransparentModel[PartA | PartB]):
+    pass
+
+
+class UntaggedUnionUsage(unittest.TestCase):
+    INPUT_1 = {"a": 1}
+    INPUT_2 = {"b": "data"}
+
+    def setUp(self):
+        self.instance_1 = UntaggedPart(self.INPUT_1)
+        self.instance_2 = UntaggedPart(self.INPUT_2)
+
+    def test_instance_1(self):
+        self.assertIsInstance(self.instance_1.value, PartA)
+
+        assert isinstance(self.instance_1.value, PartA)
+
+        self.assertEqual(self.instance_1.value.a, self.INPUT_1["a"])
+
+    def test_instance_b(self):
+        self.assertIsInstance(self.instance_2.value, PartB)
+
+        assert isinstance(self.instance_2.value, PartB)
+
+        self.assertEqual(self.instance_2.value.b, self.INPUT_2["b"])
+
+ExternallyTaggedPart = spec.transparent(Annotated[PartA | PartB, spec.tag("external")])
+
+class ExternallyTaggedUnionUsage(unittest.TestCase):
+    INPUT_1 = {"PartA": {"a": 1}}
+    INPUT_2 = {"PartB": {"b": "data"}}
+
+    def setUp(self):
+        self.instance_1 = ExternallyTaggedPart(self.INPUT_1)
+        self.instance_2 = ExternallyTaggedPart(self.INPUT_2)
+
+    def test_instance_1(self):
+        self.assertIsInstance(self.instance_1.value, PartA)
+
+        assert isinstance(self.instance_1.value, PartA)
+
+        self.assertEqual(self.instance_1.value.a, self.INPUT_1["a"])
+
+    def test_instance_b(self):
+        self.assertIsInstance(self.instance_2.value, PartB)
+
+        assert isinstance(self.instance_2.value, PartB)
+
+        self.assertEqual(self.instance_2.value.b, self.INPUT_2["b"])
 
 if __name__ == "__main__":
     unittest.main()

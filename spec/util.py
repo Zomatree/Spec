@@ -1,24 +1,37 @@
 from __future__ import annotations
 
-from typing import Any, get_origin as _get_origin, TYPE_CHECKING
+from typing import Any, Iterable, TypeGuard, get_origin as _get_origin, TYPE_CHECKING, Literal, Union
+from types import UnionType
 
 if TYPE_CHECKING:
     from .item import InternalItem
 
-__all__ = ("get_origin", "pretty_type")
+class _Missing:
+    def __bool__(self) -> Literal[False]:
+        return False
+
+def is_union(ty: Any) -> bool:
+    origin = get_origin(ty)
+
+    return origin is Union or origin is UnionType
+
+Missing = _Missing()
 
 def get_origin(obj: Any) -> Any:
     return _get_origin(obj) or obj
 
+def get_original_bases(obj: Any) -> tuple[Any, ...]:
+    return getattr(obj, "__orig_bases__", ())
+
 def pretty_type(item: InternalItem) -> str:
-    if generics := item.internal_items:
+    if not isinstance(item.ty, list) and (generics := item.internal_items):
         generic_str = f"[{', '.join([pretty_type(generic) for generic in generics])}]"
     else:
         generic_str = ""
 
-    return f"{item.ty.__name__}{generic_str}"
+    return f"{item.ty.__name__ if not isinstance(item.ty, list) else to_union([ty.ty.__name__ for ty in item.ty])}{generic_str}"
 
-def to_union(types: set[Any]) -> str:
+def to_union(types: Iterable[Any]) -> str:
     return " | ".join(types or ["Unknown"])
 
 def generate_type_from_data(data: Any) -> str:

@@ -14,3 +14,9 @@ class InvalidType(SpecError):
 
 class FailedValidation(SpecError):
     pass
+
+class UnknownUnionKey(SpecError):
+    pass
+
+class MissingTypeName(SpecError):
+    pass

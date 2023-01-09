@@ -1,28 +1,114 @@
 from __future__ import annotations
+from bdb import Breakpoint
+from pyexpat import model
 from types import NoneType, UnionType
-from typing import Annotated, Any, Literal, Union, get_args
+from typing import Annotated, Any, Generic, TypeGuard, TypeVar, Union, get_args
 
-from .errors import MissingArgument, MissingRequiredKey, InvalidType, FailedValidation
+from .errors import MissingArgument, MissingRequiredKey, InvalidType, FailedValidation, MissingTypeName, SpecError, UnknownUnionKey
 from .item import Item, InternalItem
-from .util import get_origin, pretty_type, generate_type_from_data
+from .util import get_origin, get_original_bases, pretty_type, generate_type_from_data, _Missing, Missing, is_union
 
-class _Missing:
-    def __bool__(self) -> Literal[False]:
-        return False
+T = TypeVar("T")
 
-Missing = _Missing()
+def is_model(obj: Any) -> TypeGuard[type[Model]]:
+    return isinstance(obj, type) and issubclass(obj, Model)
+
+def generate_invalid_type(model: Model, item: InternalItem, root_item: InternalItem, root_value: Any) -> InvalidType:
+    return InvalidType(f"{model.__class__.__name__}.{item.key} expected type {pretty_type(root_item)} but found {generate_type_from_data(root_value)}")
 
 def validate(item: InternalItem, model: Model, value: Any, root_item: InternalItem | None = None, root_value: Any | _Missing = Missing) -> Any:
     root_item = root_item or item
     root_value = root_value or value
 
-    if isinstance(item.ty, type) and issubclass(item.ty, Model):
+    if is_model(item.ty):
         return item.ty(value)
 
     origin = get_origin(item.ty)
 
-    if not isinstance(value, origin):
-        raise InvalidType(f"{model.__class__.__name__}.{item.key} expected type {pretty_type(root_item)} but found {generate_type_from_data(root_value)}")
+    if isinstance(item.ty, list):
+        match item.tag:
+            case "untagged":
+                for arg in item.ty:
+                    assert isinstance(arg, InternalItem)
+
+                    try:
+                        value = validate(arg, model, value, root_item, root_value)
+                    except SpecError:
+                        pass
+                    else:
+                        break
+                else:
+                    raise generate_invalid_type(model, item, root_item, root_value)
+
+            case "external":
+                if not isinstance(value, dict):
+                    raise generate_invalid_type(model, item, root_item, root_value)
+
+                try:
+                    key, value = next(iter(value.items()))
+                except StopIteration:
+                    raise UnknownUnionKey(f"Unknown key found ``")
+
+                for internal_item in item.ty:
+                    assert isinstance(internal_item, InternalItem)
+                    assert internal_item.type_name
+
+                    if key == internal_item.type_name:
+                        value = validate(internal_item, model, value, root_item, root_value)
+                        model.__tag_map__[internal_item.key] = key
+                        break
+                else:
+                    raise UnknownUnionKey(f"Unknown key found `{key}`")
+
+            case "ajacent":
+                if not isinstance(value, dict):
+                    raise generate_invalid_type(model, item, root_item, root_value)
+
+                tag_key = item.tag_info["tag"]
+                content_key = item.tag_info["content"]
+
+                try:
+                    key = value[tag_key]
+                    content = value[content_key]
+                except KeyError:
+                    raise generate_invalid_type(model, item, root_item, root_value)
+
+                for internal_item in item.ty:
+                    assert isinstance(internal_item, InternalItem)
+                    assert internal_item.type_name
+
+                    if key == internal_item.type_name:
+                        value = validate(internal_item, model, content, root_item, root_value)
+                        model.__tag_map__[internal_item.key] = key
+                        break
+                else:
+                    raise UnknownUnionKey(f"Unknown key found `{key}`")
+
+            case "internal":
+                if not isinstance(value, dict):
+                    raise generate_invalid_type(model, item, root_item, root_value)
+
+                tag_key = item.tag_info["tag"]
+
+                try:
+                    key = value[tag_key]
+                except KeyError:
+                    raise MissingRequiredKey(f"Missing required key {model.__class__.__name__}.{tag_key}")
+
+                for internal_item in item.ty:
+                    assert isinstance(internal_item, InternalItem)
+                    assert internal_item.type_name
+
+                    if key == internal_item.type_name:
+                        value = validate(internal_item, model, value, root_item, root_value)
+                        model.__tag_map__[internal_item.key] = key
+                        break
+                else:
+                    raise UnknownUnionKey(f"Unknown key found `{key}`")
+
+    else:
+        if not isinstance(value, origin):
+            raise generate_invalid_type(model, item, root_item, root_value)
 
     if origin in [list, set, tuple]:
         internal_item = item.internal_items[0]
@@ -57,17 +143,32 @@ def convert_to_item(cls: type, key: str, annotation: Any, existing: Item | None 
     args = get_args(annotation)
 
     if origin is Annotated:
-        item = convert_to_item(cls, key, args[0], args[1])
+        existing_item = args[1]
+        existing_item._key = key
 
-    elif origin in (Union, UnionType):
-        item = Item()
-        item._key = key
-
-        if args[1] is NoneType:
-            item._default = lambda: None
-            item._ty = (args[0], NoneType)
+        item = convert_to_item(cls, key, args[0], existing_item)
     else:
-        item = Item(_key=key, _ty=annotation)
+        item = existing or Item(_key=key, _ty=annotation)
+
+    if is_union(origin):
+        if any(x is NoneType for x in args) and "_default" not in item._modified:  # for handling Optional
+            item._default = lambda: None
+
+        internal_types = []
+
+        for ty in args:
+            inner_item = convert_to_item(cls, key, ty)
+
+            if item._tag != "untagged":
+                if is_model(ty) and not inner_item._type_name:
+                    inner_item._type_name = ty.__name__
+
+                if not inner_item._type_name:
+                    raise MissingTypeName(f"{cls.__name__}.{key} union type is missing a type name for {ty}")
+
+            internal_types.append(inner_item._to_internal())
+
+        item._ty = internal_types
 
     if existing:
         for modified in existing._modified:
@@ -80,6 +181,7 @@ def convert_to_item(cls: type, key: str, annotation: Any, existing: Item | None 
 
     item._internal_items = internal_items
 
+    print(item)
     return item
 
 class Model:
@@ -99,6 +201,8 @@ class Model:
         cls._items = items
 
     def __init__(self, data: dict[str, Any] | None = None, /, **kwargs: Any):
+        self.__tag_map__: dict[str, str] = {}
+
         if data is None and not kwargs:
             raise MissingArgument("No data or kwargs passed to Model")
 
@@ -143,10 +247,23 @@ class Model:
                 dict_inner_output: dict[Any, Any] = {}
 
                 for inner_key, inner_value in value.items():
+                    if isinstance(inner_key, Model):
+                        inner_key = inner_key.to_dict()
+
                     if isinstance(inner_value, Model):
                         inner_value = inner_value.to_dict()
 
                     dict_inner_output[inner_key] = inner_value
+
+            if item.tag == "external":
+                value = {self.__tag_map__[item.key]: value}
+            elif item.tag == "internal":
+                value[item.tag_info["tag"]] = self.__tag_map__[item.key]
+            elif item.tag == "ajacent":
+                value = {
+                    item.tag_info["tag"]: self.__tag_map__[item.key],
+                    item.tag_info["content"]: value
+                }
 
             output[item.actual_key] = value
 
@@ -167,3 +284,25 @@ class Model:
             items.append(f"{item.key}={value!r}")
 
         return f"<{self.__class__.__name__} {' '.join(items)}>"
+
+class TransparentModel(Generic[T], Model):
+    def __init_subclass__(cls) -> None:
+        ty = get_args(get_original_bases(cls)[0])[0]
+
+        cls._items = {"value": convert_to_item(cls, "value", ty)._to_internal()}
+
+    def __init__(self, data: Any):
+        self.value: T
+
+        super().__init__({"value": data})
+
+    def __repr__(self) -> str:
+        return f"<{self.__class__.__name__} {self.value!r}>"
+
+def transparent(ty: type[T]) -> type[TransparentModel[T]]:
+    if is_union(ty):
+        name = "Or".join([v.__name__.capitalize() for v in get_args(ty)])
+    else:
+        name = ty.__name__
+
+    return type(name, (TransparentModel[ty],), {})
