@@ -308,5 +308,53 @@ class ExternallyTaggedUnionUsage(unittest.TestCase):
 
         self.assertEqual(self.instance_2.value.b, self.INPUT_2["PartB"]["b"])
 
+AjacentlyTaggedPart = spec.transparent(Annotated[PartA | PartB, spec.tag("ajacent", tag="type", content="value")])
+
+class AjacentlyTaggedUnionUsage(unittest.TestCase):
+    INPUT_1 = {"type": "PartA", "value": {"a": 1}}
+    INPUT_2 = {"type": "PartB", "value": {"b": "data"}}
+
+    def setUp(self):
+        self.instance_1 = AjacentlyTaggedPart(self.INPUT_1)
+        self.instance_2 = AjacentlyTaggedPart(self.INPUT_2)
+
+    def test_instance_1(self):
+        self.assertIsInstance(self.instance_1.value, PartA)
+
+        assert isinstance(self.instance_1.value, PartA)
+
+        self.assertEqual(self.instance_1.value.a, self.INPUT_1["value"]["a"])
+
+    def test_instance_b(self):
+        self.assertIsInstance(self.instance_2.value, PartB)
+
+        assert isinstance(self.instance_2.value, PartB)
+
+        self.assertEqual(self.instance_2.value.b, self.INPUT_2["value"]["b"])
+
+InternallyTaggedPart = spec.transparent(Annotated[PartA | PartB, spec.tag("internal", tag="type")])
+
+class InternallyTaggedUnionUsage(unittest.TestCase):
+    INPUT_1 = {"type": "PartA", "a": 1}
+    INPUT_2 = {"type": "PartB", "b": "data"}
+
+    def setUp(self):
+        self.instance_1 = InternallyTaggedPart(self.INPUT_1)
+        self.instance_2 = InternallyTaggedPart(self.INPUT_2)
+
+    def test_instance_1(self):
+        self.assertIsInstance(self.instance_1.value, PartA)
+
+        assert isinstance(self.instance_1.value, PartA)
+
+        self.assertEqual(self.instance_1.value.a, self.INPUT_1["a"])
+
+    def test_instance_b(self):
+        self.assertIsInstance(self.instance_2.value, PartB)
+
+        assert isinstance(self.instance_2.value, PartB)
+
+        self.assertEqual(self.instance_2.value.b, self.INPUT_2["b"])
+
 if __name__ == "__main__":
     unittest.main()

@@ -1,10 +1,18 @@
 from __future__ import annotations
 
-from typing import Any, Iterable, TypeGuard, get_origin as _get_origin, TYPE_CHECKING, Literal, Union
+from typing import Any, get_origin as _get_origin, TYPE_CHECKING, Literal, Union
 from types import UnionType
+from typing_extensions import TypeVar
 
 if TYPE_CHECKING:
     from .item import InternalItem
+
+T = TypeVar("T", default=Any)
+
+class UniqueList(list[T]):
+    def append(self, value: T):
+        if value not in self:
+            super().append(value)
 
 class _Missing:
     def __bool__(self) -> Literal[False]:
@@ -31,27 +39,27 @@ def pretty_type(item: InternalItem) -> str:
 
     return f"{item.ty.__name__ if not isinstance(item.ty, list) else to_union([ty.ty.__name__ for ty in item.ty])}{generic_str}"
 
-def to_union(types: Iterable[Any]) -> str:
+def to_union(types: list[Any]) -> str:
     return " | ".join(types or ["Unknown"])
 
 def generate_type_from_data(data: Any) -> str:
     ty = type(data)
 
     if isinstance(data, (list, set, tuple)):
-        types = set[Any]()
+        types = UniqueList()
 
         for value in data:
-            types.add(generate_type_from_data(value))
+            types.append(generate_type_from_data(value))
 
         generics = [to_union(types)]
 
     elif isinstance(data, dict):
-        key_types = set[Any]()
-        value_types = set[Any]()
+        key_types = UniqueList()
+        value_types = UniqueList()
 
         for key, value in data.items():
-            key_types.add(generate_type_from_data(key))
-            value_types.add(generate_type_from_data(value))
+            key_types.append(generate_type_from_data(key))
+            value_types.append(generate_type_from_data(value))
 
         generics = [to_union(key_types), to_union(value_types)]
     else:
