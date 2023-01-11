@@ -5,7 +5,7 @@ from types import NoneType, new_class
 
 from .errors import MissingArgument, MissingRequiredKey, InvalidType, FailedValidation, MissingTypeName, SpecError, UnknownUnionKey
 from .item import Item, InternalItem
-from .util import get_origin, get_original_bases, pretty_type, generate_type_from_data, _Missing, Missing, is_union
+from .util import get_origin, get_original_bases, get_type_name, pretty_type, generate_type_from_data, _Missing, Missing, is_union
 
 T = TypeVar("T")
 
@@ -163,7 +163,7 @@ def convert_to_item(cls: type, key: str, annotation: Any, existing: Item | None 
 
             if item._tag != "untagged":
                 if is_model(ty) and not inner_item._type_name:
-                    inner_item._type_name = ty.__name__
+                    inner_item._type_name = ty._type_name
 
                 if not inner_item._type_name:
                     raise MissingTypeName(f"{cls.__name__}.{key} union type is missing a type name for {ty}")
@@ -187,9 +187,12 @@ def convert_to_item(cls: type, key: str, annotation: Any, existing: Item | None 
 
 class Model:
     _items: dict[str, InternalItem]
+    _type_name: str
 
-    def __init_subclass__(cls) -> None:
+    def __init_subclass__(cls, type_name: str | None = None) -> None:
         items: dict[str, InternalItem] = {}
+
+        cls._type_name = type_name or cls.__name__
 
         for key, annotation in cls.__annotations__.items():
             item = convert_to_item(cls, key, annotation)._to_internal()
@@ -302,9 +305,9 @@ class TransparentModel(Generic[T], Model):
 
 def transparent(ty: type[T], item: Item | None = None) -> type[TransparentModel[T]]:
     if is_union(ty):
-        name = "Or".join([v.__name__.capitalize() for v in get_args(ty)])
+        name = "Or".join([get_type_name(v).capitalize() for v in get_args(ty)])
     else:
-        name = ty.__name__
+        name = get_type_name(ty)
 
     class Mod(TransparentModel[ty], item=item):
         pass

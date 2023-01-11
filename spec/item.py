@@ -131,3 +131,6 @@ def tag(tag_type: Literal["ajacent"], *, tag: Any, content: Any) -> Item[T]:
 
 def tag(tag_type: Literal["untagged", "external", "internal", "ajacent"], **kwargs: Any) -> Item[T]:
     return Item().tag(tag_type, **kwargs)
+
+def type_name(name: str) -> Item[T]:
+    return Item().type_name(name)
