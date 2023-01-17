@@ -19,7 +19,7 @@ class Item(Generic[T]):
     _modified: list[str] = field(default_factory=lambda: [])
     _validate: Callable[[T], bool] = lambda _: True
     _hook: Callable[[T], T] = lambda x: x
-    _tag: Literal["untagged", "external", "internal", "ajacent"] = "untagged"
+    _tag: Literal["untagged", "external", "internal", "adjacent"] = "untagged"
     _tag_info: dict[str, Any] = field(default_factory=lambda: {})
     _type_name: str | None = None
 
@@ -66,10 +66,10 @@ class Item(Generic[T]):
         ...
 
     @overload
-    def tag(self, tag_type: Literal["ajacent"], *, tag: Any, content: Any) -> Self:
+    def tag(self, tag_type: Literal["adjacent"], *, tag: Any, content: Any) -> Self:
         ...
 
-    def tag(self, tag_type: Literal["untagged", "external", "internal", "ajacent"], **kwargs: Any) -> Self:
+    def tag(self, tag_type: Literal["untagged", "external", "internal", "adjacent"], **kwargs: Any) -> Self:
         self._tag = tag_type
         self._tag_info = kwargs
 
@@ -92,7 +92,7 @@ class InternalItem(Generic[T]):
     default: Callable[[], T] | None
     validate: Callable[[T], bool]
     hook: Callable[[T], T]
-    tag: Literal["untagged", "external", "internal", "ajacent"]
+    tag: Literal["untagged", "external", "internal", "adjacent"]
     tag_info: dict[str, Any]
     type_name: str | None
 
@@ -126,10 +126,10 @@ def tag(tag_type: Literal["internal"], *, tag: Any) -> Item[T]:
     ...
 
 @overload
-def tag(tag_type: Literal["ajacent"], *, tag: Any, content: Any) -> Item[T]:
+def tag(tag_type: Literal["adjacent"], *, tag: Any, content: Any) -> Item[T]:
     ...
 
-def tag(tag_type: Literal["untagged", "external", "internal", "ajacent"], **kwargs: Any) -> Item[T]:
+def tag(tag_type: Literal["untagged", "external", "internal", "adjacent"], **kwargs: Any) -> Item[T]:
     return Item().tag(tag_type, **kwargs)
 
 def type_name(name: str) -> Item[T]:

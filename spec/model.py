@@ -59,7 +59,7 @@ def validate(item: InternalItem, model: Model, value: Any, root_item: InternalIt
                 else:
                     raise UnknownUnionKey(f"Unknown key found `{key}`")
 
-            case "ajacent":
+            case "adjacent":
                 if not isinstance(value, dict):
                     raise generate_invalid_type(model, item, root_item, root_value)
 
@@ -185,6 +185,48 @@ def convert_to_item(cls: type, key: str, annotation: Any, existing: Item | None 
 
     return item
 
+def value_to_dict(value: Any, tag_map: dict[str, Any], item: InternalItem) -> Any:
+    output = value
+
+    if isinstance(value, Model):
+        output = value.to_dict()
+
+    if isinstance(value, (list, set, tuple)):
+        list_inner_output: list[Any] = []
+
+        for inner_value in value:
+            if isinstance(inner_value, Model):
+                inner_value = inner_value.to_dict()
+
+            list_inner_output.append(inner_value)
+
+        output: Any = type(value)(list_inner_output)
+
+    if isinstance(value, dict):
+        dict_inner_output: dict[Any, Any] = {}
+
+        for inner_key, inner_value in value.items():
+            if isinstance(inner_value, Model):
+                inner_value = inner_value.to_dict()
+
+            dict_inner_output[inner_key] = inner_value
+
+        output = dict_inner_output
+
+    if item.tag == "external":
+        output = {tag_map[item.key]: output}
+
+    elif item.tag == "internal":
+        output[item.tag_info["tag"]] = tag_map[item.key]
+
+    elif item.tag == "adjacent":
+        output = {
+            item.tag_info["tag"]: tag_map[item.key],
+            item.tag_info["content"]: output
+        }
+
+    return output
+
 class Model:
     _items: dict[str, InternalItem]
     _type_name: str
@@ -232,44 +274,7 @@ class Model:
 
         for item in self._items.values():
             value = getattr(self, item.key)
-
-            if isinstance(value, Model):
-                value = value.to_dict()
-
-            if isinstance(value, (list, set, tuple)):
-                list_inner_output: list[Any] = []
-
-                for inner_value in value:
-                    if isinstance(inner_value, Model):
-                        inner_value = inner_value.to_dict()
-
-                    list_inner_output.append(inner_value)
-
-                value: Any = type(value)(list_inner_output)
-
-            if isinstance(value, dict):
-                dict_inner_output: dict[Any, Any] = {}
-
-                for inner_key, inner_value in value.items():
-                    if isinstance(inner_key, Model):
-                        inner_key = inner_key.to_dict()
-
-                    if isinstance(inner_value, Model):
-                        inner_value = inner_value.to_dict()
-
-                    dict_inner_output[inner_key] = inner_value
-
-            if item.tag == "external":
-                value = {self.__tag_map__[item.key]: value}
-            elif item.tag == "internal":
-                value[item.tag_info["tag"]] = self.__tag_map__[item.key]
-            elif item.tag == "ajacent":
-                value = {
-                    item.tag_info["tag"]: self.__tag_map__[item.key],
-                    item.tag_info["content"]: value
-                }
-
-            output[item.actual_key] = value
+            output[item.actual_key] = value_to_dict(value, self.__tag_map__, item)
 
         return output
 
@@ -300,12 +305,16 @@ class TransparentModel(Generic[T], Model):
 
         super().__init__({"value": data})
 
+    def to_dict(self) -> dict[str, Any]:
+        print(self._items["value"])
+        return value_to_dict(self.value, self.__tag_map__, self._items["value"])
+
     def __repr__(self) -> str:
         return f"<{self.__class__.__name__} {self.value!r}>"
 
 def transparent(ty: type[T], item: Item | None = None) -> type[TransparentModel[T]]:
     if is_union(ty):
-        name = "Or".join([get_type_name(v).capitalize() for v in get_args(ty)])
+        name = "Or".join([get_type_name(v) for v in get_args(ty)])
     else:
         name = get_type_name(ty)
 
