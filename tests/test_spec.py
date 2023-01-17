@@ -6,6 +6,9 @@ class Simple(spec.Model):
     a: int
     b: str
 
+class OtherSimple(spec.Model):
+    c: int
+
 class TestSimple(unittest.TestCase):
     INPUT = {"a": 1, "b": "value"}
 
@@ -23,6 +26,10 @@ class TestSimple(unittest.TestCase):
 
     def test_repr(self):
         self.assertEqual(repr(self.instance), "<Simple a=1 b='value'>")
+
+    def test_eq(self):
+        self.assertEqual(self.instance, Simple(self.INPUT))
+        self.assertNotEqual(self.instance, OtherSimple({"c": 2}))
 
 class Inner(spec.Model):
     value: int
@@ -277,12 +284,16 @@ class UntaggedUnionUsage(unittest.TestCase):
 
         self.assertEqual(self.instance_1.value.a, self.INPUT_1["a"])
 
+        self.assertEqual(self.instance_1.to_dict(), self.INPUT_1)
+
     def test_instance_b(self):
         self.assertIsInstance(self.instance_2.value, PartB)
 
         assert isinstance(self.instance_2.value, PartB)
 
         self.assertEqual(self.instance_2.value.b, self.INPUT_2["b"])
+
+        self.assertEqual(self.instance_2.to_dict(), self.INPUT_2)
 
 ExternallyTaggedPart = spec.transparent(Annotated[PartA | PartB, spec.tag("external")])
 
@@ -301,6 +312,8 @@ class ExternallyTaggedUnionUsage(unittest.TestCase):
 
         self.assertEqual(self.instance_1.value.a, self.INPUT_1["PartA"]["a"])
 
+        self.assertEqual(self.instance_1.to_dict(), self.INPUT_1)
+
     def test_instance_b(self):
         self.assertIsInstance(self.instance_2.value, PartB)
 
@@ -308,15 +321,17 @@ class ExternallyTaggedUnionUsage(unittest.TestCase):
 
         self.assertEqual(self.instance_2.value.b, self.INPUT_2["PartB"]["b"])
 
-AjacentlyTaggedPart = spec.transparent(Annotated[PartA | PartB, spec.tag("ajacent", tag="type", content="value")])
+        self.assertEqual(self.instance_2.to_dict(), self.INPUT_2)
 
-class AjacentlyTaggedUnionUsage(unittest.TestCase):
+adjacentlyTaggedPart = spec.transparent(Annotated[PartA | PartB, spec.tag("adjacent", tag="type", content="value")])
+
+class adjacentlyTaggedUnionUsage(unittest.TestCase):
     INPUT_1 = {"type": "PartA", "value": {"a": 1}}
     INPUT_2 = {"type": "PartB", "value": {"b": "data"}}
 
     def setUp(self):
-        self.instance_1 = AjacentlyTaggedPart(self.INPUT_1)
-        self.instance_2 = AjacentlyTaggedPart(self.INPUT_2)
+        self.instance_1 = adjacentlyTaggedPart(self.INPUT_1)
+        self.instance_2 = adjacentlyTaggedPart(self.INPUT_2)
 
     def test_instance_1(self):
         self.assertIsInstance(self.instance_1.value, PartA)
@@ -325,6 +340,8 @@ class AjacentlyTaggedUnionUsage(unittest.TestCase):
 
         self.assertEqual(self.instance_1.value.a, self.INPUT_1["value"]["a"])
 
+        self.assertEqual(self.instance_1.to_dict(), self.INPUT_1)
+
     def test_instance_b(self):
         self.assertIsInstance(self.instance_2.value, PartB)
 
@@ -332,7 +349,9 @@ class AjacentlyTaggedUnionUsage(unittest.TestCase):
 
         self.assertEqual(self.instance_2.value.b, self.INPUT_2["value"]["b"])
 
-InternallyTaggedPart = spec.transparent(Annotated[PartA | PartB, spec.tag("internal", tag="type")])
+        self.assertEqual(self.instance_2.to_dict(), self.INPUT_2)
+
+InternallyTaggedPart = spec.transparent(PartA | PartB, spec.tag("internal", tag="type"))
 
 class InternallyTaggedUnionUsage(unittest.TestCase):
     INPUT_1 = {"type": "PartA", "a": 1}
@@ -349,12 +368,36 @@ class InternallyTaggedUnionUsage(unittest.TestCase):
 
         self.assertEqual(self.instance_1.value.a, self.INPUT_1["a"])
 
+        self.assertEqual(self.instance_1.to_dict(), self.INPUT_1)
+
     def test_instance_b(self):
         self.assertIsInstance(self.instance_2.value, PartB)
 
         assert isinstance(self.instance_2.value, PartB)
 
         self.assertEqual(self.instance_2.value.b, self.INPUT_2["b"])
+
+        self.assertEqual(self.instance_2.to_dict(), self.INPUT_2)
+
+    def test_repr(self):
+        self.assertEqual(repr(self.instance_1), "<PartAOrPartB <PartA a=1>>")
+        self.assertEqual(repr(self.instance_2), "<PartAOrPartB <PartB b='data'>>")
+
+class TestInvalidTaggedModel(unittest.TestCase):
+    def test_fail(self):
+        with self.assertRaises(spec.MissingTypeName):
+            spec.transparent(int | str, spec.tag("external"))
+
+class Validation(spec.Model):
+    x: Annotated[int, spec.validate(range(10).__contains__)]
+
+class TestValidation(unittest.TestCase):
+    def test_invalid_validation(self):
+        with self.assertRaises(spec.FailedValidation):
+            Validation(x=100)
+
+    def test_valid_validation(self):
+        Validation(x=5)
 
 if __name__ == "__main__":
     unittest.main()
