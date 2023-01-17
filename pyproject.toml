@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "spec"
-description = ''
+description = 'A statically typed data structure validator with support for advance features.'
 readme = "README.md"
 requires-python = ">=3.11"
 license = "MIT"
@@ -22,9 +22,9 @@ dependencies = ["typing_extensions>=4.4.0"]
 dynamic = ["version"]
 
 [project.urls]
-Documentation = "https://github.com/unknown/spec#readme"
-Issues = "https://github.com/unknown/spec/issues"
-Source = "https://github.com/unknown/spec"
+Documentation = "https://github.com/zomatree/spec#readme"
+Issues = "https://github.com/zomatree/spec/issues"
+Source = "https://github.com/zomatree/spec"
 
 [tool.hatch.version]
 path = "spec/__init__.py"
@@ -34,6 +34,7 @@ dependencies = [
   "pytest",
   "pytest-cov",
 ]
+
 [tool.hatch.envs.default.scripts]
 cov = "pytest --cov-report=term-missing --cov-config=pyproject.toml --cov=spec --cov=tests {args}"
 no-cov = "cov --no-cov {args}"
@@ -50,6 +51,7 @@ exclude_lines = [
   "no cov",
   "if __name__ == .__main__.:",
   "if TYPE_CHECKING:",
+  "@overload"
 ]
 
 [tool.pyright]
