@@ -256,7 +256,7 @@ class Invalid(spec.Model):
 
 class InvalidUsage(unittest.TestCase):
     def test_fail(self):
-        with self.assertRaises(spec.InvalidType):
+        with self.assertRaises(spec.SpecErrorGroup):
             Invalid({"a": "not a string"})
 
 class PartA(spec.Model):
@@ -393,11 +393,23 @@ class Validation(spec.Model):
 
 class TestValidation(unittest.TestCase):
     def test_invalid_validation(self):
-        with self.assertRaises(spec.FailedValidation):
+        with self.assertRaises(spec.SpecErrorGroup):
             Validation(x=100)
 
     def test_valid_validation(self):
         Validation(x=5)
+
+class HookModel(spec.Model):
+    a: Annotated[int, spec.hook(lambda x: x + 1)]
+
+class TestHook(unittest.TestCase):
+    INPUT = {"a": 1}
+
+    def setUp(self):
+        self.instance = HookModel(self.INPUT)
+
+    def test_hook(self):
+        self.assertEqual(self.instance.a, self.INPUT["a"] + 1)
 
 if __name__ == "__main__":
     unittest.main()

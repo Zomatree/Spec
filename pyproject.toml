@@ -36,7 +36,7 @@ dependencies = [
 ]
 
 [tool.hatch.envs.default.scripts]
-cov = "pytest --cov-report=term-missing --cov-config=pyproject.toml --cov=spec --cov=tests {args}"
+cov = "python3.11 -m pytest --cov-report=html:cov_html --cov-config=pyproject.toml --cov=spec {args}"
 no-cov = "cov --no-cov {args}"
 
 [[tool.hatch.envs.test.matrix]]

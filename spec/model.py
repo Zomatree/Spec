@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-from typing import Annotated, Any, Generic, TypeGuard, TypeVar, get_args
+from typing import Annotated, Any, Generic, Literal, TypeGuard, TypeVar, get_args
 from types import NoneType, new_class
 
-from .errors import MissingArgument, MissingRequiredKey, InvalidType, FailedValidation, MissingTypeName, SpecError, UnknownUnionKey
+from .errors import MissingArgument, MissingRequiredKey, InvalidType, FailedValidation, MissingTypeName, SpecError, SpecErrorGroup, UnknownUnionKey
 from .item import Item, InternalItem
 from .util import get_origin, get_original_bases, get_type_name, pretty_type, generate_type_from_data, _Missing, Missing, is_union
 
@@ -13,14 +13,15 @@ def is_model(obj: Any) -> TypeGuard[type[Model]]:
     return isinstance(obj, type) and issubclass(obj, Model)
 
 def generate_invalid_type(model: Model, item: InternalItem, root_item: InternalItem, root_value: Any) -> InvalidType:
-    return InvalidType(f"{model.__class__.__name__}.{item.key} expected type {pretty_type(root_item)} but found {generate_type_from_data(root_value)}")
+    return InvalidType(model.__class__.__name__, item.key, pretty_type(root_item), generate_type_from_data(root_value))
 
-def validate(item: InternalItem, model: Model, value: Any, root_item: InternalItem | None = None, root_value: Any | _Missing = Missing) -> Any:
+def validate(item: InternalItem, model: Model, value: Any, root_item: InternalItem | None = None, root_value: Any | _Missing = Missing, errors: list[Exception] | None = None, should_append: bool = True) -> tuple[Literal[True], Any] | tuple[Literal[False], list[Exception]]:
     root_item = root_item or item
     root_value = root_value or value
+    errors = errors or []
 
     if is_model(item.ty):
-        return item.ty(value)
+        return True, item.ty(value)
 
     origin = get_origin(item.ty)
 
@@ -29,113 +30,150 @@ def validate(item: InternalItem, model: Model, value: Any, root_item: InternalIt
             case "untagged":
                 for arg in item.ty:
                     assert isinstance(arg, InternalItem)
-
                     try:
-                        value = validate(arg, model, value, root_item, root_value)
-                    except SpecError:
-                        pass
-                    else:
+                        status, value = validate(arg, model, value, root_item, root_value, errors, False)
+                    except SpecErrorGroup:
+                        status = False
+
+                    if status:
                         break
                 else:
-                    raise generate_invalid_type(model, item, root_item, root_value)
+                    if should_append:
+                        errors.append(generate_invalid_type(model, item, root_item, root_value))
 
             case "external":
-                if not isinstance(value, dict):
-                    raise generate_invalid_type(model, item, root_item, root_value)
+                if not isinstance(value, dict) and should_append:
+                    errors.append(generate_invalid_type(model, item, root_item, root_value))
 
                 try:
                     key, value = next(iter(value.items()))
                 except StopIteration:
-                    raise UnknownUnionKey(f"Unknown key found ``")
-
-                for internal_item in item.ty:
-                    assert isinstance(internal_item, InternalItem)
-                    assert internal_item.type_name
-
-                    if key == internal_item.type_name:
-                        value = validate(internal_item, model, value, root_item, root_value)
-                        model.__tag_map__[internal_item.key] = key
-                        break
+                    if should_append:
+                        errors.append(UnknownUnionKey(model.__class__.__name__, ""))
                 else:
-                    raise UnknownUnionKey(f"Unknown key found `{key}`")
+                    for internal_item in item.ty:
+                        assert isinstance(internal_item, InternalItem)
+                        assert internal_item.type_name
+
+                        if key == internal_item.type_name:
+                            status, value = validate(internal_item, model, value, root_item, root_value, errors, should_append)
+
+                            if status:
+                                model.__tag_map__[internal_item.key] = key
+                                break
+                            elif should_append:
+                                errors.extend(value)
+                    else:
+                        if should_append:
+                            errors.append(UnknownUnionKey(model.__class__.__name__, key))
 
             case "adjacent":
-                if not isinstance(value, dict):
-                    raise generate_invalid_type(model, item, root_item, root_value)
-
-                tag_key = item.tag_info["tag"]
-                content_key = item.tag_info["content"]
-
-                try:
-                    key = value[tag_key]
-                    content = value[content_key]
-                except KeyError:
-                    raise generate_invalid_type(model, item, root_item, root_value)
-
-                for internal_item in item.ty:
-                    assert isinstance(internal_item, InternalItem)
-                    assert internal_item.type_name
-
-                    if key == internal_item.type_name:
-                        value = validate(internal_item, model, content, root_item, root_value)
-                        model.__tag_map__[internal_item.key] = key
-                        break
+                if not isinstance(value, dict) and should_append:
+                    errors.append(generate_invalid_type(model, item, root_item, root_value))
                 else:
-                    raise UnknownUnionKey(f"Unknown key found `{key}`")
+                    tag_key = item.tag_info["tag"]
+                    content_key = item.tag_info["content"]
+
+                    try:
+                        key = value[tag_key]
+                        content = value[content_key]
+                    except KeyError:
+                        if should_append:
+                            errors.append(generate_invalid_type(model, item, root_item, root_value))
+                    else:
+                        for internal_item in item.ty:
+                            assert isinstance(internal_item, InternalItem)
+                            assert internal_item.type_name
+
+                            if key == internal_item.type_name:
+                                status, value = validate(internal_item, model, content, root_item, root_value, errors, should_append)
+
+                                if status:
+                                    model.__tag_map__[internal_item.key] = key
+                                    break
+                                elif should_append:
+                                    errors.extend(value)
+
+                        else:
+                            if should_append:
+                                errors.append(UnknownUnionKey(model.__class__.__name__, key))
 
             case "internal":
                 if not isinstance(value, dict):
-                    raise generate_invalid_type(model, item, root_item, root_value)
-
-                tag_key = item.tag_info["tag"]
-
-                try:
-                    key = value[tag_key]
-                except KeyError:
-                    raise MissingRequiredKey(f"Missing required key {model.__class__.__name__}.{tag_key}")
-
-                for internal_item in item.ty:
-                    assert isinstance(internal_item, InternalItem)
-                    assert internal_item.type_name
-
-                    if key == internal_item.type_name:
-                        value = validate(internal_item, model, value, root_item, root_value)
-                        model.__tag_map__[internal_item.key] = key
-                        break
+                    errors.append(generate_invalid_type(model, item, root_item, root_value))
                 else:
-                    raise UnknownUnionKey(f"Unknown key found `{key}`")
+                    tag_key = item.tag_info["tag"]
+
+                    try:
+                        key = value[tag_key]
+                    except KeyError:
+                        if should_append:
+                            errors.append(MissingRequiredKey(model.__class__.__name__, tag_key))
+                    else:
+                        for internal_item in item.ty:
+                            assert isinstance(internal_item, InternalItem)
+                            assert internal_item.type_name
+
+                            if key == internal_item.type_name:
+                                status, value = validate(internal_item, model, value, root_item, root_value, errors, should_append)
+
+                                if status:
+                                    model.__tag_map__[internal_item.key] = key
+                                    break
+                                elif should_append:
+                                    errors.extend(value)
+                        else:
+                            if should_append:
+                                errors.append(UnknownUnionKey(model.__class__.__name__, key))
 
     else:
-        if not isinstance(value, origin):
-            raise generate_invalid_type(model, item, root_item, root_value)
+        if not isinstance(value, origin) and should_append:
+            errors.append(generate_invalid_type(model, item, root_item, root_value))
+        else:
+            if origin in [list, set, tuple]:
+                internal_item = item.internal_items[0]
 
-    if origin in [list, set, tuple]:
-        internal_item = item.internal_items[0]
+                list_output: list[InternalItem] = []
 
-        list_output: list[InternalItem] = []
+                for internal_value in value:
+                    status, value = validate(internal_item, model, internal_value, root_item, root_value, errors, should_append)
 
-        for internal_value in value:
-            list_output.append(validate(internal_item, model, internal_value, root_item, root_value))
+                    if status:
+                        list_output.append(value)
+                    elif should_append:
+                        errors.extend(value)
 
-        value = origin(list_output)
+                value = origin(list_output)
 
-    elif origin is dict:
-        internal_item_key, internal_item_value = item.internal_items
+            elif origin is dict:
+                internal_item_key, internal_item_value = item.internal_items
 
-        dict_output: dict[Any, Any] = {}
+                dict_output: dict[Any, Any] = {}
 
-        for internal_key, internal_value in value.items():
-            internal_key = validate(internal_item_key, model, internal_key, root_item, root_value)
-            internal_value = validate(internal_item_value, model, internal_value, root_item, root_value)
+                for internal_key, internal_value in value.items():
+                    internal_key_status, internal_key = validate(internal_item_key, model, internal_key, root_item, root_value, errors, should_append)
+                    internal_value_status, internal_value = validate(internal_item_value, model, internal_value, root_item, root_value, errors, should_append)
 
-            dict_output[internal_key] = internal_value
+                    if internal_key_status and internal_value_status:
+                        dict_output[internal_key] = internal_value
+                    else:
+                        if not internal_key_status and should_append:
+                            errors.extend(internal_key)
 
-        value = dict_output
+                        if not internal_value_status and should_append:
+                            errors.extend(internal_value)
 
-    if not item.validate(value):
-        raise FailedValidation(f"{model.__class__.__name__}.{item.key} failed validation")
+                value = dict_output
 
-    return item.hook(value)
+            if not item.validate(value) and should_append:
+                errors.append(FailedValidation(model.__class__.__name__, item.key))
+            else:
+                value = item.hook(value)
+
+    if errors:
+        return False, errors
+    else:
+        return True, value
 
 def convert_to_item(cls: type, key: str, annotation: Any, existing: Item | None = None) -> Item:
     origin = get_origin(annotation)
@@ -166,7 +204,7 @@ def convert_to_item(cls: type, key: str, annotation: Any, existing: Item | None 
                     inner_item._type_name = ty._type_name
 
                 if not inner_item._type_name:
-                    raise MissingTypeName(f"{cls.__name__}.{key} union type is missing a type name for {ty}")
+                    raise MissingTypeName(cls.__name__, key, repr(ty))
 
             internal_types.append(inner_item._to_internal())
 
@@ -248,26 +286,42 @@ class Model:
 
     def __init__(self, data: dict[str, Any] | None = None, /, **kwargs: Any):
         self.__tag_map__: dict[str, str] = {}
+        errors: list[Exception] = []
+
 
         if data is None and not kwargs:
-            raise MissingArgument("No data or kwargs passed to Model")
+            raise SpecErrorGroup("Validation failed", [MissingArgument(self.__class__.__name__)])
 
         data = data or kwargs
+
+        if not isinstance(data, dict):
+            raise SpecErrorGroup("Validation failed", [InvalidType(self.__class__.__name__, "", "dict", generate_type_from_data(data))])
+
+        use_keys = []
 
         for key, item in self._items.items():
             if key not in data:
                 if item.default:
                     setattr(self, item.key, item.default())
+                    use_keys.append(key)
                 else:
-                    raise MissingRequiredKey(f"Missing required key {self.__class__.__name__}.{key}")
+                    errors.append(MissingRequiredKey(self.__class__.__name__, key))
+            else:
+                use_keys.append(key)
 
         for key, value in data.items():
-            if not (item := self._items.get(key)):
+            if not (item := self._items.get(key)) or key not in use_keys:
                 continue
 
-            new_value = validate(item, self, value)
+            status, new_value = validate(item, self, value)
 
-            setattr(self, item.key, new_value)
+            if status:
+                setattr(self, item.key, new_value)
+            else:
+                errors.extend(new_value)
+
+        if errors:
+            raise SpecErrorGroup("Validation failed", errors)
 
     def to_dict(self) -> dict[str, Any]:
         output: dict[str, Any] = {}
