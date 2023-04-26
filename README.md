@@ -20,9 +20,8 @@ $ pip install git+https://github.com/zomatree/spec
 
 # Usage
 
+### A simple class
 ```python
-import spec
-
 class MyModel(spec.Model):
     a: int
     b: str
@@ -31,6 +30,30 @@ foo = MyModel({"a": 1, "b": "bar"})
 
 print(foo.a)
 print(foo.b)
+```
+
+### Nested classes
+
+```python
+class Inner(spec.Model):
+    v: int
+
+class Outer(spec.Model):
+    inner: Inner
+    other: str
+
+data = Outer({"inner": {"v": 1}, "other": "foo"})
+```
+
+### Renaming
+
+```python
+from typing import Annotated
+
+class MyModel(spec.Model):
+    my_foo = Annotated[int, spec.rename("myFoo")]
+
+data = MyModel({"myFoo": 1})
 ```
 
 ## License
