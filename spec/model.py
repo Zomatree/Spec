@@ -279,7 +279,7 @@ class ScreamingKebabCase(RenameBase):
     def rename(key: str) -> str:
         return Upper.rename(KebabCase.rename(key))
 
-RenameScheme: TypeAlias = Default | Upper | CamelCase | PascalCase
+RenameScheme: TypeAlias = Default | Upper | CamelCase | PascalCase | KebabCase | ScreamingKebabCase
 
 class Model:
     _items: dict[str, InternalItem]
