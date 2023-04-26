@@ -399,5 +399,22 @@ class TestValidation(unittest.TestCase):
     def test_valid_validation(self):
         Validation(x=5)
 
+class GlobalRename(spec.Model, rename=spec.CamelCase):
+    my_foo: int
+
+class TestGlobalRename(unittest.TestCase):
+    INPUT_1 = {"myFoo": 1}
+    INPUT_2 = {"my_foo": 1}
+
+    def setUp(self) -> None:
+        self.instance = GlobalRename(self.INPUT_1)
+
+    def test_instance(self):
+        self.assertEqual(self.instance.my_foo, self.INPUT_1["myFoo"])
+
+    def test_invalid(self):
+        with self.assertRaises(spec.MissingRequiredKey):
+            GlobalRename(self.INPUT_2)
+
 if __name__ == "__main__":
     unittest.main()

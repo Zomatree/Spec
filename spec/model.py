@@ -1,6 +1,8 @@
 from __future__ import annotations
+from os import rename
+import stat
 
-from typing import Annotated, Any, Generic, TypeGuard, TypeVar, get_args
+from typing import Annotated, Any, Generic, TypeAlias, TypeGuard, TypeVar, Union, get_args
 from types import NoneType, new_class
 
 from .errors import MissingArgument, MissingRequiredKey, InvalidType, FailedValidation, MissingTypeName, SpecError, UnknownUnionKey
@@ -227,17 +229,74 @@ def value_to_dict(value: Any, tag_map: dict[str, Any], item: InternalItem) -> An
 
     return output
 
+class RenameBase:
+    @staticmethod
+    def rename(key: str) -> str:
+        raise NotImplemented
+
+class Default(RenameBase):
+    @staticmethod
+    def rename(key: str) -> str:
+        return key
+
+class Upper(RenameBase):
+    @staticmethod
+    def rename(key: str) -> str:
+        return key.upper()
+
+class CamelCase(RenameBase):
+    @staticmethod
+    def rename(key: str) -> str:
+        parts = []
+
+        for i, word in enumerate(key.split("_")):
+            if i == 0:
+                parts.append(word)
+
+            elif word:
+                parts.append(word[0].upper() + word[1:])
+
+        return "".join(parts)
+
+class PascalCase(RenameBase):
+    @staticmethod
+    def rename(key: str) -> str:
+        parts = []
+
+        for word in key.split("_"):
+            if word:
+                parts.append(word[0].upper() + word[1:])
+
+        return "".join(parts)
+
+class KebabCase(RenameBase):
+    @staticmethod
+    def rename(key: str) -> str:
+        return key.replace("_", "-")
+
+class ScreamingKebabCase(RenameBase):
+    @staticmethod
+    def rename(key: str) -> str:
+        return Upper.rename(KebabCase.rename(key))
+
+RenameScheme: TypeAlias = Default | Upper | CamelCase | PascalCase
+
 class Model:
     _items: dict[str, InternalItem]
     _type_name: str
 
-    def __init_subclass__(cls, type_name: str | None = None) -> None:
+    def __init_subclass__(cls, type_name: str | None = None, rename: type[RenameScheme] = Default) -> None:
         items: dict[str, InternalItem] = {}
 
         cls._type_name = type_name or cls.__name__
 
         for key, annotation in cls.__annotations__.items():
-            item = convert_to_item(cls, key, annotation)._to_internal()
+            it = convert_to_item(cls, key, annotation)
+
+            if "rename" not in it._modified and it._rename is None:
+                it._rename = rename.rename(key)
+
+            item = it._to_internal()
 
             if (default := getattr(cls, key, Missing)) is not Missing:
                 item.default = lambda: default
