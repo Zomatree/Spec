@@ -1,13 +1,13 @@
 from __future__ import annotations
-from os import rename
-import stat
 
-from typing import Annotated, Any, Generic, TypeAlias, TypeGuard, TypeVar, Union, get_args
-from types import NoneType, new_class
+from typing import Annotated, Any, Generic, TypeAlias, TypeGuard, TypeVar, get_args
+from types import NoneType
 
 from .errors import MissingArgument, MissingRequiredKey, InvalidType, FailedValidation, MissingTypeName, SpecError, UnknownUnionKey
 from .item import Item, InternalItem
 from .util import get_origin, get_original_bases, get_type_name, pretty_type, generate_type_from_data, _Missing, Missing, is_union
+
+__all__ = ("is_model", "generate_invalid_type", "validate", "convert_to_item", "value_to_dict", "RenameBase", "Default", "Upper", "CamelCase", "PascalCase", "KebabCase", "ScreamingKebabCase", "RenameScheme", "Model", "TransparentModel", "transparent")
 
 T = TypeVar("T")
 
@@ -17,7 +17,7 @@ def is_model(obj: Any) -> TypeGuard[type[Model]]:
 def generate_invalid_type(model: Model, item: InternalItem, root_item: InternalItem, root_value: Any) -> InvalidType:
     return InvalidType(f"{model.__class__.__name__}.{item.key} expected type {pretty_type(root_item)} but found {generate_type_from_data(root_value)}")
 
-def validate(item: InternalItem, model: Model, value: Any, root_item: InternalItem | None = None, root_value: Any | _Missing = Missing) -> Any:
+def validate(item: InternalItem[Any], model: Model, value: Any, root_item: InternalItem | None = None, root_value: Any | _Missing = Missing) -> Any:
     root_item = root_item or item
     root_value = root_value or value
 

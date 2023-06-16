@@ -1,4 +1,4 @@
-__all__ = ("SpecError", "MissingArgument", "MissingRequiredKey", "InvalidType")
+__all__ = ("SpecError", "MissingArgument", "MissingRequiredKey", "InvalidType", "FailedValidation", "UnknownUnionKey", "MissingTypeName")
 
 class SpecError(Exception):
     pass
